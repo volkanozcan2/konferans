@@ -31,6 +31,20 @@ const lessonSlots = [
 ];
 
 const days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
+const blockedDateRanges = [
+  { start: "2026-03-16", end: "2026-03-20", reason: "Ara tatil" }, // Kullanıcı talebi
+  { start: "2026-03-20", end: "2026-03-22", reason: "Ramazan Bayramı" },
+  { start: "2026-05-27", end: "2026-05-30", reason: "Kurban Bayramı" }
+];
+const blockedSingleDates = new Map([
+  ["2026-01-01", "Yılbaşı"],
+  ["2026-04-23", "23 Nisan"],
+  ["2026-05-01", "1 Mayıs"],
+  ["2026-05-19", "19 Mayıs"],
+  ["2026-07-15", "15 Temmuz"],
+  ["2026-08-30", "30 Ağustos"],
+  ["2026-10-29", "29 Ekim"]
+]);
 
 const el = {
   loginCard: document.getElementById("login-card"),
@@ -43,6 +57,7 @@ const el = {
   prevWeek: document.getElementById("prev-week"),
   nextWeek: document.getElementById("next-week"),
   todayWeek: document.getElementById("today-week"),
+  exportCsvBtn: document.getElementById("export-csv-btn"),
   logoutBtn: document.getElementById("logout-btn"),
   modal: document.getElementById("reservation-modal"),
   form: document.getElementById("reservation-form"),
@@ -103,6 +118,7 @@ function bindEvents() {
     state.weekStart = startOfWeek(new Date());
     await loadReservations();
   });
+  el.exportCsvBtn.addEventListener("click", exportWeekCsv);
   el.logoutBtn.addEventListener("click", handleLogout);
   el.form.addEventListener("submit", saveReservation);
   el.deleteBtn.addEventListener("click", deleteReservation);
@@ -172,11 +188,16 @@ function render() {
 
       const slot = document.createElement("button");
       slot.type = "button";
-      slot.className = `cell slot ${reservation ? "filled" : ""}`;
+      const blockedReason = getBlockedReason(date);
+      const isBlockedEmptySlot = Boolean(blockedReason) && !reservation;
+      slot.className = `cell slot ${reservation ? "filled" : ""} ${isBlockedEmptySlot ? "blocked" : ""}`;
       slot.dataset.date = date;
       slot.dataset.start = start;
       slot.dataset.end = end;
       slot.setAttribute("aria-label", `${date} ${start} rezervasyon hücresi`);
+      if (isBlockedEmptySlot) {
+        slot.disabled = true;
+      }
 
       if (reservation) {
         slot.dataset.id = reservation.id;
@@ -191,7 +212,14 @@ function render() {
           <div class="title">${escapeHtml(reservation.event_content)}</div>
         `;
       } else {
-        slot.innerHTML = `
+        slot.innerHTML = isBlockedEmptySlot
+          ? `
+          <div class="slot-time">
+            <span>${start} - ${end}</span>
+          </div>
+          <div class="blocked-label">${escapeHtml(blockedReason)}</div>
+        `
+          : `
           <div class="slot-time">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <circle cx="12" cy="12" r="9"></circle>
@@ -202,13 +230,21 @@ function render() {
         `;
       }
 
-      slot.addEventListener("click", () => openModal({ reservation, date, start, end }));
+      if (!isBlockedEmptySlot) {
+        slot.addEventListener("click", () => openModal({ reservation, date, start, end }));
+      }
       el.grid.append(slot);
     }
   });
 }
 
 function openModal({ reservation, date, start, end }) {
+  const blockedReason = getBlockedReason(date);
+  if (!reservation && blockedReason) {
+    notify(`${blockedReason} nedeniyle bu tarihe rezervasyon eklenemez.`);
+    return;
+  }
+
   if (!reservation && isPastSlot(date, start)) {
     notify("Geçmiş saatler için rezervasyon eklenemez.");
     return;
@@ -297,6 +333,12 @@ async function saveReservation(event) {
   const hasPastSlot = selectedSlots.some(([slotStart]) => isPastSlot(reservationDate, slotStart));
   if (hasPastSlot) {
     notify("Geçmiş saatler için rezervasyon eklenemez.");
+    return;
+  }
+
+  const blockedReason = getBlockedReason(reservationDate);
+  if (blockedReason) {
+    notify(`${blockedReason} nedeniyle bu tarihe rezervasyon eklenemez.`);
     return;
   }
 
@@ -470,4 +512,57 @@ function escapeHtml(value) {
 function isPastSlot(dateIso, startTime) {
   const slotStart = new Date(`${dateIso}T${startTime}:00`);
   return slotStart.getTime() < Date.now();
+}
+
+function getBlockedReason(dateIso) {
+  if (blockedSingleDates.has(dateIso)) {
+    return blockedSingleDates.get(dateIso);
+  }
+  return (
+    blockedDateRanges.find((range) => dateIso >= range.start && dateIso <= range.end)?.reason || null
+  );
+}
+
+function exportWeekCsv() {
+  const rows = [["Tarih", "Gun", "Baslangic", "Bitis", "Durum", "Ogretmen", "Etkinlik", "Not"]];
+  for (let dayIndex = 0; dayIndex < 5; dayIndex += 1) {
+    const dateObj = addDays(state.weekStart, dayIndex);
+    const dateIso = isoDate(dateObj);
+    const dayName = days[dayIndex];
+    const blockedReason = getBlockedReason(dateIso);
+
+    lessonSlots.forEach(([start, end]) => {
+      const reservation = state.reservations.find(
+        (item) => item.reservation_date === dateIso && item.start_time.slice(0, 5) === start
+      );
+      const status = reservation ? "Dolu" : blockedReason ? "Kapali" : "Bos";
+      rows.push([
+        dateIso,
+        dayName,
+        start,
+        end,
+        status,
+        reservation?.teacher_name || "",
+        reservation?.event_content || "",
+        blockedReason || ""
+      ]);
+    });
+  }
+
+  const csvBody = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+  const blob = new Blob(["\uFEFF" + csvBody], { type: "text/csv;charset=utf-8;" });
+  const fileName = `konferans-hafta-${isoDate(state.weekStart)}.csv`;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
 }
