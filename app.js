@@ -15,6 +15,7 @@ const state = {
   weekStart: startOfWeek(new Date()),
   user: null,
   reservations: [],
+  reservationIndex: new Map(),
   selectedSlot: null,
   viewOnly: false
 };
@@ -165,6 +166,7 @@ async function loadReservations() {
   }
 
   state.reservations = data || [];
+  state.reservationIndex = buildReservationIndex(state.reservations);
   render();
 }
 
@@ -182,9 +184,7 @@ function render() {
   lessonSlots.forEach(([start, end]) => {
     for (let dayIndex = 0; dayIndex < 5; dayIndex += 1) {
       const date = isoDate(addDays(state.weekStart, dayIndex));
-      const reservation = state.reservations.find(
-        (item) => item.reservation_date === date && item.start_time.slice(0, 5) === start
-      );
+      const reservation = state.reservationIndex.get(reservationKey(date, start));
 
       const slot = document.createElement("button");
       slot.type = "button";
@@ -532,9 +532,7 @@ function exportWeekCsv() {
     const blockedReason = getBlockedReason(dateIso);
 
     lessonSlots.forEach(([start, end]) => {
-      const reservation = state.reservations.find(
-        (item) => item.reservation_date === dateIso && item.start_time.slice(0, 5) === start
-      );
+      const reservation = state.reservationIndex.get(reservationKey(dateIso, start));
       const status = reservation ? "Dolu" : blockedReason ? "Kapali" : "Bos";
       rows.push([
         dateIso,
@@ -565,4 +563,17 @@ function exportWeekCsv() {
 function csvEscape(value) {
   const text = String(value ?? "");
   return `"${text.replaceAll('"', '""')}"`;
+}
+
+function buildReservationIndex(reservations) {
+  const index = new Map();
+  for (const reservation of reservations) {
+    const start = reservation.start_time.slice(0, 5);
+    index.set(reservationKey(reservation.reservation_date, start), reservation);
+  }
+  return index;
+}
+
+function reservationKey(dateIso, startTime) {
+  return `${dateIso}|${startTime}`;
 }
