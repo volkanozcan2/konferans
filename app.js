@@ -194,13 +194,16 @@ function render() {
       slot.dataset.date = date;
       slot.dataset.start = start;
       slot.dataset.end = end;
-      slot.setAttribute("aria-label", `${date} ${start} rezervasyon hücresi`);
       if (isBlockedEmptySlot) {
         slot.disabled = true;
       }
 
       if (reservation) {
         slot.dataset.id = reservation.id;
+        slot.setAttribute(
+          "aria-label",
+          `${date} ${start}-${end} dolu slot, etkinlik: ${reservation.event_content}`
+        );
         slot.innerHTML = `
           <div class="slot-time">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -212,6 +215,12 @@ function render() {
           <div class="title">${escapeHtml(reservation.event_content)}</div>
         `;
       } else {
+        slot.setAttribute(
+          "aria-label",
+          isBlockedEmptySlot
+            ? `${date} ${start}-${end} kapalı slot, neden: ${blockedReason}`
+            : `${date} ${start}-${end} boş slot`
+        );
         slot.innerHTML = isBlockedEmptySlot
           ? `
           <div class="slot-time">
