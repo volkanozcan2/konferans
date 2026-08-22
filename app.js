@@ -1,15 +1,6 @@
-import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-
-const SUPABASE_URL = window.SUPABASE_URL || "https://udmvmzezfjrngxghbvmq.supabase.co";
-const SUPABASE_ANON_KEY =
-  window.SUPABASE_ANON_KEY || "sb_publishable_VLk7r1RB0k88iJtWWYka-w_2D7upIsi";
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  showConfigError();
-  throw new Error("Supabase config missing.");
-}
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const LOGIN_PASSWORD = "gixxer07!";
+const SESSION_KEY = "konferans_session";
+const RESERVATIONS_KEY = "konferans_reservations";
 
 const state = {
   weekStart: startOfWeek(new Date()),
@@ -50,7 +41,7 @@ const blockedSingleDates = new Map([
 const el = {
   loginCard: document.getElementById("login-card"),
   loginForm: document.getElementById("login-form"),
-  email: document.getElementById("email"),
+  isim: document.getElementById("isim"),
   password: document.getElementById("password"),
   app: document.getElementById("app"),
   weekLabel: document.getElementById("week-label"),
@@ -87,18 +78,12 @@ const el = {
 bindEvents();
 init();
 
-async function init() {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) {
-    notify("Oturum kontrol edilemedi.");
-    showLogin();
-    return;
-  }
-
-  if (data.session?.user) {
-    state.user = data.session.user;
+function init() {
+  const session = loadSession();
+  if (session) {
+    state.user = session;
     showApp();
-    await loadReservations();
+    loadReservations();
     return;
   }
 
@@ -107,17 +92,17 @@ async function init() {
 
 function bindEvents() {
   el.loginForm.addEventListener("submit", handleLogin);
-  el.prevWeek.addEventListener("click", async () => {
+  el.prevWeek.addEventListener("click", () => {
     state.weekStart = addDays(state.weekStart, -7);
-    await loadReservations();
+    loadReservations();
   });
-  el.nextWeek.addEventListener("click", async () => {
+  el.nextWeek.addEventListener("click", () => {
     state.weekStart = addDays(state.weekStart, 7);
-    await loadReservations();
+    loadReservations();
   });
-  el.todayWeek.addEventListener("click", async () => {
+  el.todayWeek.addEventListener("click", () => {
     state.weekStart = startOfWeek(new Date());
-    await loadReservations();
+    loadReservations();
   });
   el.exportCsvBtn.addEventListener("click", exportWeekCsv);
   el.logoutBtn.addEventListener("click", handleLogout);
@@ -126,46 +111,49 @@ function bindEvents() {
   el.cancelBtn.addEventListener("click", () => el.modal.close());
 }
 
-async function handleLogin(event) {
+function handleLogin(event) {
   event.preventDefault();
-  const email = el.email.value.trim();
+  const name = sanitizeName(el.isim.value);
   const password = el.password.value;
 
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) {
-    notify(`Giriş başarısız: ${error.message}`);
+  if (!name) {
+    notify("İsim alanı boş bırakılamaz.");
     return;
   }
 
-  state.user = data.user;
+  if (password !== LOGIN_PASSWORD) {
+    notify("Giriş başarısız: şifre hatalı.");
+    return;
+  }
+
+  state.user = { name };
+  saveSession(state.user);
   el.loginForm.reset();
   showApp();
-  await loadReservations();
+  loadReservations();
 }
 
-async function handleLogout() {
-  await supabase.auth.signOut();
+function handleLogout() {
+  clearSession();
   state.user = null;
   state.reservations = [];
   showLogin();
 }
 
-async function loadReservations() {
+function loadReservations() {
   const weekEnd = addDays(state.weekStart, 4);
-  const { data, error } = await supabase
-    .from("reservations")
-    .select("id, teacher_name, event_content, reservation_date, start_time, end_time, user_id")
-    .gte("reservation_date", isoDate(state.weekStart))
-    .lte("reservation_date", isoDate(weekEnd))
-    .order("reservation_date", { ascending: true })
-    .order("start_time", { ascending: true });
+  const weekStartIso = isoDate(state.weekStart);
+  const weekEndIso = isoDate(weekEnd);
 
-  if (error) {
-    notify(`Veriler alınamadı: ${error.message}`);
-    return;
-  }
-
-  state.reservations = data || [];
+  const all = loadAllReservations();
+  state.reservations = all
+    .filter((item) => item.reservation_date >= weekStartIso && item.reservation_date <= weekEndIso)
+    .sort((a, b) => {
+      if (a.reservation_date !== b.reservation_date) {
+        return a.reservation_date < b.reservation_date ? -1 : 1;
+      }
+      return a.start_time < b.start_time ? -1 : a.start_time > b.start_time ? 1 : 0;
+    });
   state.reservationIndex = buildReservationIndex(state.reservations);
   render();
 }
@@ -304,14 +292,14 @@ function openModal({ reservation, date, start, end }) {
   }
 }
 
-async function saveReservation(event) {
+function saveReservation(event) {
   event.preventDefault();
   if (state.viewOnly) {
     el.modal.close();
     return;
   }
 
-  const teacherName = el.teacherName.value.trim() || profileName(state.user);
+  const teacherName = sanitizeName(el.teacherName.value) || profileName(state.user);
   const eventContent = el.eventContent.value.trim();
   const reservationDate = el.reservationDate.value;
   const startTime = el.reservationStart.value;
@@ -351,8 +339,9 @@ async function saveReservation(event) {
     return;
   }
 
+  const allReservations = loadAllReservations();
   const hasCollision = selectedSlots.some(([slotStart]) =>
-    state.reservations.some(
+    allReservations.some(
       (item) => item.reservation_date === reservationDate && item.start_time.slice(0, 5) === slotStart
     )
   );
@@ -361,27 +350,20 @@ async function saveReservation(event) {
     return;
   }
 
-  const insertPayload = selectedSlots.map(([slotStart, slotEnd]) => ({
+  const newReservations = selectedSlots.map(([slotStart, slotEnd]) => ({
+    id: generateId(),
     teacher_name: teacherName,
     event_content: eventContent,
     reservation_date: reservationDate,
     start_time: slotStart,
     end_time: slotEnd,
-    user_id: state.user.id
+    user_id: teacherName
   }));
 
-  const { error } = await supabase.from("reservations").insert(insertPayload);
-  if (error) {
-    if (error.code === "23505") {
-      notify("Seçilen aralıkta çakışma var. Kayıt yapılmadı.");
-      return;
-    }
-    notify(`Kayıt başarısız: ${error.message}`);
-    return;
-  }
+  saveAllReservations([...allReservations, ...newReservations]);
 
   el.modal.close();
-  await loadReservations();
+  loadReservations();
   notify("Rezervasyon eklendi.");
 }
 
@@ -398,14 +380,10 @@ async function deleteReservation() {
     return;
   }
 
-  const { error } = await supabase.from("reservations").delete().eq("id", id);
-  if (error) {
-    el.modal.showModal();
-    notify(`Silme başarısız: ${error.message}`);
-    return;
-  }
+  const allReservations = loadAllReservations();
+  saveAllReservations(allReservations.filter((item) => item.id !== id));
 
-  await loadReservations();
+  loadReservations();
   notify("Rezervasyon silindi.");
 }
 
@@ -450,8 +428,7 @@ function showLogin() {
 
 function profileName(user) {
   if (!user) return "";
-  const meta = user.user_metadata || {};
-  return meta.full_name || meta.name || user.email || "Öğretmen";
+  return user.name || "Öğretmen";
 }
 
 function makeCell(content, className) {
@@ -459,18 +436,6 @@ function makeCell(content, className) {
   cell.className = className;
   cell.innerHTML = content;
   return cell;
-}
-
-function showConfigError() {
-  const box = document.getElementById("login-card");
-  box.classList.remove("hidden");
-  box.innerHTML = `
-    <h1>Kurulum Gerekli</h1>
-    <p>
-      <code>app.js</code> içinde <code>window.SUPABASE_URL</code> ve
-      <code>window.SUPABASE_ANON_KEY</code> değerlerini README'ye göre girin.
-    </p>
-  `;
 }
 
 function notify(text) {
@@ -516,6 +481,22 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function sanitizeName(value) {
+  return String(value ?? "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/[<>"'`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+}
+
+function generateId() {
+  if (window.crypto && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function isPastSlot(dateIso, startTime) {
@@ -585,4 +566,38 @@ function buildReservationIndex(reservations) {
 
 function reservationKey(dateIso, startTime) {
   return `${dateIso}|${startTime}`;
+}
+
+function loadAllReservations() {
+  try {
+    const raw = localStorage.getItem(RESERVATIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAllReservations(list) {
+  localStorage.setItem(RESERVATIONS_KEY, JSON.stringify(list));
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.name !== "string" || !parsed.name) return null;
+    return { name: parsed.name };
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(user) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ name: user.name, loggedInAt: Date.now() }));
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
 }
