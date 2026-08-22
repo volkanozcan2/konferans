@@ -18,10 +18,11 @@ const lessonSlots = [
   ["09:50", "10:30"],
   ["10:40", "11:20"],
   ["11:30", "12:10"],
+  ["12:20", "13:00"],
   ["12:50", "13:30"],
-  ["13:40", "14:20"],
-  ["14:30", "15:10"],
-  ["15:20", "16:00"]
+  ["13:40", "14:20", "13:50-14:30"],
+  ["14:30", "15:10", "14:40-15:20"],
+  ["15:20", "16:00", "15:30-16:00"]
 ];
 
 const days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
@@ -186,7 +187,9 @@ function render() {
     el.grid.append(head);
   });
 
-  lessonSlots.forEach(([start, end]) => {
+  lessonSlots.forEach(([start, end, altLabel]) => {
+    const timeLabel = altLabel ? `${start} - ${end} / ${altLabel}` : `${start} - ${end}`;
+    const ariaTimeLabel = altLabel ? `${start}-${end} / ${altLabel}` : `${start}-${end}`;
     for (let dayIndex = 0; dayIndex < 5; dayIndex += 1) {
       const date = isoDate(addDays(state.weekStart, dayIndex));
       const reservation = state.reservationIndex.get(reservationKey(date, start));
@@ -207,7 +210,7 @@ function render() {
         slot.dataset.id = reservation.id;
         slot.setAttribute(
           "aria-label",
-          `${date} ${start}-${end} dolu slot, etkinlik: ${reservation.event_content}`
+          `${date} ${ariaTimeLabel} dolu slot, etkinlik: ${reservation.event_content}`
         );
         slot.innerHTML = `
           <div class="slot-time">
@@ -215,7 +218,7 @@ function render() {
               <circle cx="12" cy="12" r="9"></circle>
               <path d="M12 7v5l3 2"></path>
             </svg>
-            <span>${start} - ${end}</span>
+            <span>${timeLabel}</span>
           </div>
           <div class="title">${escapeHtml(reservation.event_content)}</div>
         `;
@@ -223,13 +226,13 @@ function render() {
         slot.setAttribute(
           "aria-label",
           isBlockedEmptySlot
-            ? `${date} ${start}-${end} kapalı slot, neden: ${blockedReason}`
-            : `${date} ${start}-${end} boş slot`
+            ? `${date} ${ariaTimeLabel} kapalı slot, neden: ${blockedReason}`
+            : `${date} ${ariaTimeLabel} boş slot`
         );
         slot.innerHTML = isBlockedEmptySlot
           ? `
           <div class="slot-time">
-            <span>${start} - ${end}</span>
+            <span>${timeLabel}</span>
           </div>
           <div class="blocked-label">${escapeHtml(blockedReason)}</div>
         `
@@ -239,7 +242,7 @@ function render() {
               <circle cx="12" cy="12" r="9"></circle>
               <path d="M12 7v5l3 2"></path>
             </svg>
-            <span>${start} - ${end}</span>
+            <span>${timeLabel}</span>
           </div>
         `;
       }
