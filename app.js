@@ -1,6 +1,8 @@
 const LOGIN_PASSWORD = "gixxer07!";
+const ADMIN_PASSWORD = "yonetici2026!";
 const SESSION_KEY = "konferans_session";
 const RESERVATIONS_KEY = "konferans_reservations";
+const AUDIT_LOG_KEY = "konferans_audit_log";
 
 const state = {
   weekStart: startOfWeek(new Date()),
@@ -580,6 +582,30 @@ function loadAllReservations() {
 
 function saveAllReservations(list) {
   localStorage.setItem(RESERVATIONS_KEY, JSON.stringify(list));
+}
+
+function loadAuditLog() {
+  try {
+    const raw = localStorage.getItem(AUDIT_LOG_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAuditLog(list) {
+  localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(list));
+}
+
+function appendAuditLog(entry) {
+  const log = loadAuditLog();
+  log.push({
+    id: generateId(),
+    timestamp: Date.now(),
+    ...entry
+  });
+  saveAuditLog(log);
 }
 
 function loadSession() {
