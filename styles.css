@@ -269,7 +269,7 @@ button:focus-visible {
   align-items: flex-start;
   justify-content: flex-start;
   gap: 8px;
-  height: 96px;
+  min-height: 96px;
   overflow: hidden;
   border-top: 0;
   border-left: 0;
@@ -346,6 +346,15 @@ button:focus-visible {
   font-size: 0.72rem;
   color: var(--muted);
   font-weight: 700;
+  line-height: 1;
+}
+
+.slot-time-alt {
+  margin-top: -4px;
+  font-size: 0.62rem;
+  color: var(--muted);
+  font-weight: 600;
+  opacity: 0.8;
   line-height: 1;
 }
 

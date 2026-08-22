@@ -18,11 +18,11 @@ const lessonSlots = [
   ["09:50", "10:30"],
   ["10:40", "11:20"],
   ["11:30", "12:10"],
-  ["12:20", "13:00"],
-  ["12:50", "13:30"],
+  ["12:20", "13:00", "Öğle arası"],
+  ["12:50", "13:30", "13:00-13:40"],
   ["13:40", "14:20", "13:50-14:30"],
   ["14:30", "15:10", "14:40-15:20"],
-  ["15:20", "16:00", "15:30-16:00"]
+  ["15:20", "16:00", "15:25-16:00"]
 ];
 
 const days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
@@ -188,7 +188,7 @@ function render() {
   });
 
   lessonSlots.forEach(([start, end, altLabel]) => {
-    const timeLabel = altLabel ? `${start} - ${end} / ${altLabel}` : `${start} - ${end}`;
+    const altLine = altLabel ? `<div class="slot-time-alt">${altLabel}</div>` : "";
     const ariaTimeLabel = altLabel ? `${start}-${end} / ${altLabel}` : `${start}-${end}`;
     for (let dayIndex = 0; dayIndex < 5; dayIndex += 1) {
       const date = isoDate(addDays(state.weekStart, dayIndex));
@@ -218,8 +218,9 @@ function render() {
               <circle cx="12" cy="12" r="9"></circle>
               <path d="M12 7v5l3 2"></path>
             </svg>
-            <span>${timeLabel}</span>
+            <span>${start} - ${end}</span>
           </div>
+          ${altLine}
           <div class="title">${escapeHtml(reservation.event_content)}</div>
         `;
       } else {
@@ -232,8 +233,9 @@ function render() {
         slot.innerHTML = isBlockedEmptySlot
           ? `
           <div class="slot-time">
-            <span>${timeLabel}</span>
+            <span>${start} - ${end}</span>
           </div>
+          ${altLine}
           <div class="blocked-label">${escapeHtml(blockedReason)}</div>
         `
           : `
@@ -242,8 +244,9 @@ function render() {
               <circle cx="12" cy="12" r="9"></circle>
               <path d="M12 7v5l3 2"></path>
             </svg>
-            <span>${timeLabel}</span>
+            <span>${start} - ${end}</span>
           </div>
+          ${altLine}
         `;
       }
 
