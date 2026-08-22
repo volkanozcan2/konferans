@@ -74,7 +74,18 @@ const el = {
   confirmMessage: document.getElementById("confirm-message"),
   confirmOk: document.getElementById("confirm-ok"),
   confirmCancel: document.getElementById("confirm-cancel"),
-  toast: document.getElementById("toast")
+  toast: document.getElementById("toast"),
+  adminBtn: document.getElementById("admin-btn"),
+  adminLoginModal: document.getElementById("admin-login-modal"),
+  adminLoginForm: document.getElementById("admin-login-form"),
+  adminPassword: document.getElementById("admin-password"),
+  adminLoginCancel: document.getElementById("admin-login-cancel"),
+  adminLogModal: document.getElementById("admin-log-modal"),
+  adminLogSearch: document.getElementById("admin-log-search"),
+  adminLogActionFilter: document.getElementById("admin-log-action-filter"),
+  adminLogTbody: document.getElementById("admin-log-tbody"),
+  adminLogEmpty: document.getElementById("admin-log-empty"),
+  adminLogClose: document.getElementById("admin-log-close")
 };
 
 bindEvents();
@@ -111,6 +122,12 @@ function bindEvents() {
   el.form.addEventListener("submit", saveReservation);
   el.deleteBtn.addEventListener("click", deleteReservation);
   el.cancelBtn.addEventListener("click", () => el.modal.close());
+  el.adminBtn.addEventListener("click", openAdminLoginModal);
+  el.adminLoginForm.addEventListener("submit", handleAdminLogin);
+  el.adminLoginCancel.addEventListener("click", () => el.adminLoginModal.close());
+  el.adminLogClose.addEventListener("click", () => el.adminLogModal.close());
+  el.adminLogSearch.addEventListener("input", renderAuditLog);
+  el.adminLogActionFilter.addEventListener("change", renderAuditLog);
 }
 
 function handleLogin(event) {
@@ -436,6 +453,57 @@ function askConfirm(message) {
     el.confirmOk.addEventListener("click", onOk, { once: true });
     el.confirmCancel.addEventListener("click", onCancel, { once: true });
     el.confirmModal.addEventListener("cancel", onCancel, { once: true });
+  });
+}
+
+function openAdminLoginModal() {
+  el.adminLoginForm.reset();
+  el.adminLoginModal.showModal();
+  setTimeout(() => el.adminPassword.focus(), 0);
+}
+
+function handleAdminLogin(event) {
+  event.preventDefault();
+  if (el.adminPassword.value !== ADMIN_PASSWORD) {
+    notify("Şifre hatalı.");
+    return;
+  }
+  el.adminLoginModal.close();
+  el.adminLogSearch.value = "";
+  el.adminLogActionFilter.value = "all";
+  renderAuditLog();
+  el.adminLogModal.showModal();
+}
+
+function renderAuditLog() {
+  const search = el.adminLogSearch.value.trim().toLowerCase();
+  const actionFilter = el.adminLogActionFilter.value;
+
+  const entries = loadAuditLog()
+    .filter((entry) => actionFilter === "all" || entry.action === actionFilter)
+    .filter((entry) => {
+      if (!search) return true;
+      return (
+        entry.actor.toLowerCase().includes(search) ||
+        entry.event_content.toLowerCase().includes(search)
+      );
+    })
+    .sort((a, b) => b.timestamp - a.timestamp);
+
+  el.adminLogTbody.innerHTML = "";
+  el.adminLogEmpty.classList.toggle("hidden", entries.length > 0);
+
+  entries.forEach((entry) => {
+    const row = document.createElement("tr");
+    const actionLabel = entry.action === "added" ? "Eklendi" : "Silindi";
+    row.innerHTML = `
+      <td>${escapeHtml(new Date(entry.timestamp).toLocaleString("tr-TR"))}</td>
+      <td>${escapeHtml(entry.actor)}</td>
+      <td><span class="admin-log-badge admin-log-badge-${entry.action}">${actionLabel}</span></td>
+      <td>${escapeHtml(entry.reservation_date)} ${escapeHtml(entry.start_time)}-${escapeHtml(entry.end_time)}</td>
+      <td>${escapeHtml(entry.event_content)}</td>
+    `;
+    el.adminLogTbody.append(row);
   });
 }
 
