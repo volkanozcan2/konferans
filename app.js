@@ -1,8 +1,11 @@
-const LOGIN_PASSWORD = "gixxer07!";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const ADMIN_PASSWORD = "yonetici2026!";
-const SESSION_KEY = "konferans_session";
-const RESERVATIONS_KEY = "konferans_reservations";
-const AUDIT_LOG_KEY = "konferans_audit_log";
+const USERNAME_EMAIL_DOMAIN = "konferans.local";
+const SUPABASE_URL = "https://msggolytyegvgbffldfb.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_5s3qZ7q54HBMK2Mllis6RA_fbwDme_9";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const state = {
   weekStart: startOfWeek(new Date()),
@@ -10,7 +13,8 @@ const state = {
   reservations: [],
   reservationIndex: new Map(),
   selectedSlot: null,
-  viewOnly: false
+  viewOnly: false,
+  auditLog: []
 };
 
 const lessonSlots = [
@@ -94,12 +98,18 @@ const el = {
 bindEvents();
 init();
 
-function init() {
-  const session = loadSession();
-  if (session) {
-    state.user = session;
+async function init() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    notify("Oturum kontrol edilemedi.");
+    showLogin();
+    return;
+  }
+
+  if (data.session?.user) {
+    state.user = userFromSupabase(data.session.user);
     showApp();
-    loadReservations();
+    await loadReservations();
     return;
   }
 
@@ -111,17 +121,17 @@ function bindEvents() {
     el.headRow.style.transform = `translateX(${-el.bodyScroll.scrollLeft}px)`;
   });
   el.loginForm.addEventListener("submit", handleLogin);
-  el.prevWeek.addEventListener("click", () => {
+  el.prevWeek.addEventListener("click", async () => {
     state.weekStart = addDays(state.weekStart, -7);
-    loadReservations();
+    await loadReservations();
   });
-  el.nextWeek.addEventListener("click", () => {
+  el.nextWeek.addEventListener("click", async () => {
     state.weekStart = addDays(state.weekStart, 7);
-    loadReservations();
+    await loadReservations();
   });
-  el.todayWeek.addEventListener("click", () => {
+  el.todayWeek.addEventListener("click", async () => {
     state.weekStart = startOfWeek(new Date());
-    loadReservations();
+    await loadReservations();
   });
   el.logoutBtn.addEventListener("click", handleLogout);
   el.form.addEventListener("submit", saveReservation);
@@ -135,49 +145,65 @@ function bindEvents() {
   el.adminLogActionFilter.addEventListener("change", renderAuditLog);
 }
 
-function handleLogin(event) {
-  event.preventDefault();
-  const name = sanitizeName(el.isim.value);
-  const password = el.password.value;
-
-  if (!name) {
-    notify("İsim alanı boş bırakılamaz.");
-    return;
-  }
-
-  if (password !== LOGIN_PASSWORD) {
-    notify("Giriş başarısız: şifre hatalı.");
-    return;
-  }
-
-  state.user = { name };
-  saveSession(state.user);
-  el.loginForm.reset();
-  showApp();
-  loadReservations();
+function userFromSupabase(authUser) {
+  return {
+    id: authUser.id,
+    name: authUser.user_metadata?.display_name || authUser.email
+  };
 }
 
-function handleLogout() {
-  clearSession();
+async function handleLogin(event) {
+  event.preventDefault();
+  const username = sanitizeName(el.isim.value).toLowerCase().replace(/\s+/g, "");
+  const password = el.password.value;
+
+  if (!username) {
+    notify("Kullanıcı adı boş bırakılamaz.");
+    return;
+  }
+
+  const email = `${username}@${USERNAME_EMAIL_DOMAIN}`;
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    notify("Giriş başarısız: kullanıcı adı veya şifre hatalı.");
+    return;
+  }
+
+  state.user = userFromSupabase(data.user);
+  el.loginForm.reset();
+  showApp();
+  await loadReservations();
+}
+
+async function handleLogout() {
+  await supabase.auth.signOut();
   state.user = null;
   state.reservations = [];
   showLogin();
 }
 
-function loadReservations() {
+async function loadReservations() {
   const weekEnd = addDays(state.weekStart, 4);
   const weekStartIso = isoDate(state.weekStart);
   const weekEndIso = isoDate(weekEnd);
 
-  const all = loadAllReservations();
-  state.reservations = all
-    .filter((item) => item.reservation_date >= weekStartIso && item.reservation_date <= weekEndIso)
-    .sort((a, b) => {
-      if (a.reservation_date !== b.reservation_date) {
-        return a.reservation_date < b.reservation_date ? -1 : 1;
-      }
-      return a.start_time < b.start_time ? -1 : a.start_time > b.start_time ? 1 : 0;
-    });
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("*")
+    .gte("reservation_date", weekStartIso)
+    .lte("reservation_date", weekEndIso);
+
+  if (error) {
+    notify(`Rezervasyonlar yüklenemedi: ${error.message}`);
+    return;
+  }
+
+  state.reservations = data.sort((a, b) => {
+    if (a.reservation_date !== b.reservation_date) {
+      return a.reservation_date < b.reservation_date ? -1 : 1;
+    }
+    return a.start_time < b.start_time ? -1 : a.start_time > b.start_time ? 1 : 0;
+  });
   state.reservationIndex = buildReservationIndex(state.reservations);
   render();
 }
@@ -321,14 +347,14 @@ function openModal({ reservation, date, start, end }) {
   }
 }
 
-function saveReservation(event) {
+async function saveReservation(event) {
   event.preventDefault();
   if (state.viewOnly) {
     el.modal.close();
     return;
   }
 
-  const teacherName = sanitizeName(el.teacherName.value) || profileName(state.user);
+  const teacherName = profileName(state.user);
   const eventContent = el.eventContent.value.trim();
   const reservationDate = el.reservationDate.value;
   const startTime = el.reservationStart.value;
@@ -368,11 +394,17 @@ function saveReservation(event) {
     return;
   }
 
-  const allReservations = loadAllReservations();
+  const { data: existing, error: fetchError } = await supabase
+    .from("reservations")
+    .select("start_time")
+    .eq("reservation_date", reservationDate);
+  if (fetchError) {
+    notify(`Kayıt kontrol edilemedi: ${fetchError.message}`);
+    return;
+  }
+
   const hasCollision = selectedSlots.some((slot) =>
-    allReservations.some(
-      (item) => item.reservation_date === reservationDate && item.start_time.slice(0, 5) === slot.start
-    )
+    existing.some((item) => item.start_time.slice(0, 5) === slot.start)
   );
   if (hasCollision) {
     notify("Seçilen aralıkta dolu saat var. Ders sayısını azaltın veya başka saat seçin.");
@@ -380,18 +412,26 @@ function saveReservation(event) {
   }
 
   const newReservations = selectedSlots.map((slot) => ({
-    id: generateId(),
     teacher_name: teacherName,
     event_content: eventContent,
     reservation_date: reservationDate,
     start_time: slot.start,
     end_time: slot.end,
-    user_id: teacherName
+    user_id: state.user.id
   }));
 
-  saveAllReservations([...allReservations, ...newReservations]);
-  newReservations.forEach((item) => {
-    appendAuditLog({
+  const { error: insertError } = await supabase.from("reservations").insert(newReservations);
+  if (insertError) {
+    if (insertError.code === "23505") {
+      notify("Seçilen aralıkta çakışma var. Kayıt yapılmadı.");
+      return;
+    }
+    notify(`Kayıt başarısız: ${insertError.message}`);
+    return;
+  }
+
+  for (const item of newReservations) {
+    await appendAuditLog({
       action: "added",
       actor: state.user.name,
       reservation_date: item.reservation_date,
@@ -399,10 +439,10 @@ function saveReservation(event) {
       end_time: item.end_time,
       event_content: item.event_content
     });
-  });
+  }
 
   el.modal.close();
-  loadReservations();
+  await loadReservations();
   notify("Rezervasyon eklendi.");
 }
 
@@ -419,21 +459,26 @@ async function deleteReservation() {
     return;
   }
 
-  const allReservations = loadAllReservations();
-  const deletedItem = allReservations.find((item) => item.id === id);
-  saveAllReservations(allReservations.filter((item) => item.id !== id));
-  if (deletedItem) {
-    appendAuditLog({
-      action: "deleted",
-      actor: state.user.name,
-      reservation_date: deletedItem.reservation_date,
-      start_time: deletedItem.start_time,
-      end_time: deletedItem.end_time,
-      event_content: deletedItem.event_content
-    });
+  const deletedInfo = {
+    reservation_date: el.reservationDate.value,
+    start_time: el.reservationStart.value,
+    end_time: el.reservationEnd.value,
+    event_content: el.eventContent.value
+  };
+
+  const { error } = await supabase.from("reservations").delete().eq("id", id);
+  if (error) {
+    notify(`Silme başarısız: ${error.message}`);
+    return;
   }
 
-  loadReservations();
+  await appendAuditLog({
+    action: "deleted",
+    actor: state.user.name,
+    ...deletedInfo
+  });
+
+  await loadReservations();
   notify("Rezervasyon silindi.");
 }
 
@@ -472,12 +517,23 @@ function openAdminLoginModal() {
   setTimeout(() => el.adminPassword.focus(), 0);
 }
 
-function handleAdminLogin(event) {
+async function handleAdminLogin(event) {
   event.preventDefault();
   if (el.adminPassword.value !== ADMIN_PASSWORD) {
     notify("Şifre hatalı.");
     return;
   }
+
+  const { data, error } = await supabase
+    .from("audit_log")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) {
+    notify(`Denetim kaydı yüklenemedi: ${error.message}`);
+    return;
+  }
+
+  state.auditLog = data;
   el.adminLoginModal.close();
   el.adminLogSearch.value = "";
   el.adminLogActionFilter.value = "all";
@@ -489,7 +545,7 @@ function renderAuditLog() {
   const search = el.adminLogSearch.value.trim().toLowerCase();
   const actionFilter = el.adminLogActionFilter.value;
 
-  const entries = loadAuditLog()
+  const entries = state.auditLog
     .filter((entry) => actionFilter === "all" || entry.action === actionFilter)
     .filter((entry) => {
       if (!search) return true;
@@ -497,8 +553,7 @@ function renderAuditLog() {
         entry.actor.toLowerCase().includes(search) ||
         entry.event_content.toLowerCase().includes(search)
       );
-    })
-    .sort((a, b) => b.timestamp - a.timestamp);
+    });
 
   el.adminLogTbody.innerHTML = "";
   el.adminLogEmpty.classList.toggle("hidden", entries.length > 0);
@@ -507,7 +562,7 @@ function renderAuditLog() {
     const row = document.createElement("tr");
     const actionLabel = entry.action === "added" ? "Eklendi" : "Silindi";
     row.innerHTML = `
-      <td>${escapeHtml(new Date(entry.timestamp).toLocaleString("tr-TR"))}</td>
+      <td>${escapeHtml(new Date(entry.created_at).toLocaleString("tr-TR"))}</td>
       <td>${escapeHtml(entry.actor)}</td>
       <td><span class="admin-log-badge admin-log-badge-${entry.action}">${actionLabel}</span></td>
       <td>${escapeHtml(entry.reservation_date)} ${escapeHtml(entry.start_time)}-${escapeHtml(entry.end_time)}</td>
@@ -593,13 +648,6 @@ function sanitizeName(value) {
     .slice(0, 60);
 }
 
-function generateId() {
-  if (window.crypto && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 function isPastSlot(dateIso, startTime) {
   const slotStart = new Date(`${dateIso}T${startTime}:00`);
   return slotStart.getTime() < Date.now();
@@ -627,60 +675,9 @@ function reservationKey(dateIso, startTime) {
   return `${dateIso}|${startTime}`;
 }
 
-function loadAllReservations() {
-  try {
-    const raw = localStorage.getItem(RESERVATIONS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+async function appendAuditLog(entry) {
+  const { error } = await supabase.from("audit_log").insert(entry);
+  if (error) {
+    notify(`Denetim kaydı yazılamadı: ${error.message}`);
   }
-}
-
-function saveAllReservations(list) {
-  localStorage.setItem(RESERVATIONS_KEY, JSON.stringify(list));
-}
-
-function loadAuditLog() {
-  try {
-    const raw = localStorage.getItem(AUDIT_LOG_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveAuditLog(list) {
-  localStorage.setItem(AUDIT_LOG_KEY, JSON.stringify(list));
-}
-
-function appendAuditLog(entry) {
-  const log = loadAuditLog();
-  log.push({
-    id: generateId(),
-    timestamp: Date.now(),
-    ...entry
-  });
-  saveAuditLog(log);
-}
-
-function loadSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.name !== "string" || !parsed.name) return null;
-    return { name: parsed.name };
-  } catch {
-    return null;
-  }
-}
-
-function saveSession(user) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ name: user.name, loggedInAt: Date.now() }));
-}
-
-function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
 }
