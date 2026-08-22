@@ -3,3 +3,4 @@
 .env
 .env.*
 .wrangler/
+scripts/users.local.json

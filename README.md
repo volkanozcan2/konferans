@@ -27,6 +27,27 @@ Yeni bir Supabase projesiyle çalışmak için:
 
 Gerçek şifreler asla bu repoya veya koda girmemeli; sadece Supabase panelinden yönetilir.
 
+### Toplu kullanıcı ekleme
+
+Tek tek Dashboard'dan eklemek yerine, çok sayıda öğretmeni tek seferde eklemek için
+`scripts/bulk-create-users.mjs` kullanılabilir:
+
+1. `scripts/users.example.json` dosyasını `scripts/users.local.json` olarak kopyalayıp
+   gerçek kullanıcı adı/şifre/isim bilgileriyle doldurun (bu dosya `.gitignore`'da,
+   asla commit'lenmez).
+2. Supabase panelinde **Settings → API → API Keys**'ten **`service_role` / secret**
+   anahtarını alın. Bu anahtar çok yetkilidir (RLS'i bypass eder) — sadece kendi
+   makinenizde, ortam değişkeni olarak kullanın, hiçbir zaman koda/repoya
+   yazmayın veya paylaşmayın.
+3. Script'i çalıştırın:
+
+   ```bash
+   SUPABASE_SERVICE_ROLE_KEY=<service_role_anahtarınız> node scripts/bulk-create-users.mjs
+   ```
+
+Script her kullanıcı için `<kullanici_adi>@konferans.local` e-postasıyla bir Supabase
+Auth hesabı oluşturur ve `display_name`/`is_admin` bilgisini `user_metadata`'ya yazar.
+
 ## Dağıtım
 
 Cloudflare Pages ile GitHub'dan otomatik deploy edilir (`main` dalına push yeterli).

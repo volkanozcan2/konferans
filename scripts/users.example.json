@@ -1,0 +1,14 @@
+[
+  {
+    "username": "ayse",
+    "password": "GeciciSifre123",
+    "display_name": "Ayşe Yılmaz",
+    "is_admin": false
+  },
+  {
+    "username": "mehmet",
+    "password": "GeciciSifre456",
+    "display_name": "Mehmet Kaya",
+    "is_admin": false
+  }
+]
