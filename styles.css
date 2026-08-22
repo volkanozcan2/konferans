@@ -232,6 +232,7 @@ button:focus-visible {
   border-radius: var(--radius-lg);
   padding: 16px;
   box-shadow: var(--shadow);
+  max-height: 75vh;
   overflow: auto;
 }
 
@@ -346,15 +347,6 @@ button:focus-visible {
   font-size: 0.72rem;
   color: var(--muted);
   font-weight: 700;
-  line-height: 1;
-}
-
-.slot-time-alt {
-  margin-top: -4px;
-  font-size: 0.62rem;
-  color: var(--muted);
-  font-weight: 600;
-  opacity: 0.8;
   line-height: 1;
 }
 

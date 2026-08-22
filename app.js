@@ -14,15 +14,15 @@ const state = {
 };
 
 const lessonSlots = [
-  ["09:00", "09:40"],
-  ["09:50", "10:30"],
-  ["10:40", "11:20"],
-  ["11:30", "12:10"],
-  ["12:20", "13:00", "Öğle arası"],
-  ["12:50", "13:30", "13:00-13:40"],
-  ["13:40", "14:20", "13:50-14:30"],
-  ["14:30", "15:10", "14:40-15:20"],
-  ["15:20", "16:00", "15:25-16:00"]
+  { start: "09:00", end: "09:40", label: "1. Ders" },
+  { start: "09:50", end: "10:30", label: "2. Ders" },
+  { start: "10:40", end: "11:20", label: "3. Ders" },
+  { start: "11:30", end: "12:10", label: "4. Ders" },
+  { start: "12:20", end: "13:00", label: "Öğle Arası / 5. Ders" },
+  { start: "12:50", end: "13:30", label: "5. Ders / Öğle Arası" },
+  { start: "13:40", end: "14:20", label: "6. Ders", altTime: "13:50-14:30" },
+  { start: "14:30", end: "15:10", label: "7. Ders", altTime: "14:40-15:20" },
+  { start: "15:20", end: "16:00", label: "8. Ders", altTime: "15:25-16:00" }
 ];
 
 const days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
@@ -187,9 +187,8 @@ function render() {
     el.grid.append(head);
   });
 
-  lessonSlots.forEach(([start, end, altLabel]) => {
-    const altLine = altLabel ? `<div class="slot-time-alt">${altLabel}</div>` : "";
-    const ariaTimeLabel = altLabel ? `${start}-${end} / ${altLabel}` : `${start}-${end}`;
+  lessonSlots.forEach(({ start, end, label, altTime }) => {
+    const ariaTimeLabel = altTime ? `${start}-${end} / ${altTime}` : `${start}-${end}`;
     for (let dayIndex = 0; dayIndex < 5; dayIndex += 1) {
       const date = isoDate(addDays(state.weekStart, dayIndex));
       const reservation = state.reservationIndex.get(reservationKey(date, start));
@@ -210,7 +209,7 @@ function render() {
         slot.dataset.id = reservation.id;
         slot.setAttribute(
           "aria-label",
-          `${date} ${ariaTimeLabel} dolu slot, etkinlik: ${reservation.event_content}`
+          `${date} ${label} (${ariaTimeLabel}) dolu slot, etkinlik: ${reservation.event_content}`
         );
         slot.innerHTML = `
           <div class="slot-time">
@@ -218,24 +217,22 @@ function render() {
               <circle cx="12" cy="12" r="9"></circle>
               <path d="M12 7v5l3 2"></path>
             </svg>
-            <span>${start} - ${end}</span>
+            <span>${label}</span>
           </div>
-          ${altLine}
           <div class="title">${escapeHtml(reservation.event_content)}</div>
         `;
       } else {
         slot.setAttribute(
           "aria-label",
           isBlockedEmptySlot
-            ? `${date} ${ariaTimeLabel} kapalı slot, neden: ${blockedReason}`
-            : `${date} ${ariaTimeLabel} boş slot`
+            ? `${date} ${label} (${ariaTimeLabel}) kapalı slot, neden: ${blockedReason}`
+            : `${date} ${label} (${ariaTimeLabel}) boş slot`
         );
         slot.innerHTML = isBlockedEmptySlot
           ? `
           <div class="slot-time">
-            <span>${start} - ${end}</span>
+            <span>${label}</span>
           </div>
-          ${altLine}
           <div class="blocked-label">${escapeHtml(blockedReason)}</div>
         `
           : `
@@ -244,9 +241,8 @@ function render() {
               <circle cx="12" cy="12" r="9"></circle>
               <path d="M12 7v5l3 2"></path>
             </svg>
-            <span>${start} - ${end}</span>
+            <span>${label}</span>
           </div>
-          ${altLine}
         `;
       }
 
@@ -282,7 +278,8 @@ function openModal({ reservation, date, start, end }) {
     el.reservationStart.value = reservation.start_time.slice(0, 5);
     el.reservationEnd.value = reservation.end_time.slice(0, 5);
     el.eventContent.readOnly = true;
-    el.slotSummary.classList.add("hidden");
+    el.slotSummary.textContent = `Saat: ${el.reservationStart.value} - ${el.reservationEnd.value}`;
+    el.slotSummary.classList.remove("hidden");
     el.lessonCountField.classList.add("hidden");
     el.deleteBtn.classList.remove("hidden");
     el.cancelBtn.classList.add("hidden");
@@ -297,10 +294,12 @@ function openModal({ reservation, date, start, end }) {
     el.reservationStart.value = start;
     el.reservationEnd.value = end;
     el.eventContent.readOnly = false;
-    el.slotSummary.textContent = `Başlangıç saati: ${start}`;
+    const slotInfo = lessonSlots.find((slot) => slot.start === start);
+    const timeText = slotInfo?.altTime ? `${start} - ${end} / ${slotInfo.altTime}` : `${start} - ${end}`;
+    el.slotSummary.textContent = `Saat: ${timeText}`;
     el.slotSummary.classList.remove("hidden");
     el.lessonCountField.classList.remove("hidden");
-    const startIndex = lessonSlots.findIndex(([slotStart]) => slotStart === start);
+    const startIndex = lessonSlots.findIndex((slot) => slot.start === start);
     const maxCount = lessonSlots.length - startIndex;
     el.lessonCount.max = String(maxCount);
     el.lessonCount.value = "1";
@@ -338,7 +337,7 @@ function saveReservation(event) {
     return;
   }
 
-  const startIndex = lessonSlots.findIndex(([slotStart]) => slotStart === startTime);
+  const startIndex = lessonSlots.findIndex((slot) => slot.start === startTime);
   if (startIndex < 0) {
     notify("Başlangıç saati geçersiz.");
     return;
@@ -350,7 +349,7 @@ function saveReservation(event) {
     return;
   }
 
-  const hasPastSlot = selectedSlots.some(([slotStart]) => isPastSlot(reservationDate, slotStart));
+  const hasPastSlot = selectedSlots.some((slot) => isPastSlot(reservationDate, slot.start));
   if (hasPastSlot) {
     notify("Geçmiş saatler için rezervasyon eklenemez.");
     return;
@@ -363,9 +362,9 @@ function saveReservation(event) {
   }
 
   const allReservations = loadAllReservations();
-  const hasCollision = selectedSlots.some(([slotStart]) =>
+  const hasCollision = selectedSlots.some((slot) =>
     allReservations.some(
-      (item) => item.reservation_date === reservationDate && item.start_time.slice(0, 5) === slotStart
+      (item) => item.reservation_date === reservationDate && item.start_time.slice(0, 5) === slot.start
     )
   );
   if (hasCollision) {
@@ -373,13 +372,13 @@ function saveReservation(event) {
     return;
   }
 
-  const newReservations = selectedSlots.map(([slotStart, slotEnd]) => ({
+  const newReservations = selectedSlots.map((slot) => ({
     id: generateId(),
     teacher_name: teacherName,
     event_content: eventContent,
     reservation_date: reservationDate,
-    start_time: slotStart,
-    end_time: slotEnd,
+    start_time: slot.start,
+    end_time: slot.end,
     user_id: teacherName
   }));
 
