@@ -467,6 +467,91 @@ button:focus-visible {
   transform: translateY(0);
 }
 
+.admin-log-modal {
+  width: min(760px, 96vw);
+}
+
+.admin-log-card {
+  max-height: 82vh;
+}
+
+.admin-log-filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-log-filters input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.admin-log-filters select {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  background: var(--input-bg);
+  color: var(--ink);
+}
+
+.admin-log-table-wrap {
+  max-height: 50vh;
+  overflow: auto;
+  border: 1px solid var(--grid-border);
+  border-radius: var(--radius-md);
+}
+
+.admin-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.admin-log-table th,
+.admin-log-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--grid-border);
+  white-space: nowrap;
+}
+
+.admin-log-table th {
+  position: sticky;
+  top: 0;
+  background: var(--head-bg);
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.admin-log-table td:last-child,
+.admin-log-table th:last-child {
+  white-space: normal;
+}
+
+.admin-log-empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.admin-log-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.admin-log-badge-added {
+  background: rgba(18, 122, 122, 0.16);
+  color: #0f5c5c;
+}
+
+.admin-log-badge-deleted {
+  background: #ffe5df;
+  color: var(--danger);
+}
+
 @media (max-width: 980px) {
   .calendar-grid {
     grid-template-columns: repeat(5, minmax(150px, 1fr));
