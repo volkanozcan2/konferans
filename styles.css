@@ -232,8 +232,24 @@ button:focus-visible {
   border-radius: var(--radius-lg);
   padding: 16px;
   box-shadow: var(--shadow);
-  max-height: 75vh;
-  overflow: auto;
+}
+
+.calendar-head-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.calendar-head-row {
+  border-bottom: none;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.calendar-body-scroll {
+  overflow-x: auto;
 }
 
 .calendar-grid {
@@ -255,9 +271,6 @@ button:focus-visible {
 }
 
 .head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   background: var(--head-bg);
   font-weight: 700;
   color: var(--muted);

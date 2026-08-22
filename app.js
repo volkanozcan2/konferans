@@ -48,6 +48,9 @@ const el = {
   password: document.getElementById("password"),
   app: document.getElementById("app"),
   weekLabel: document.getElementById("week-label"),
+  headWrap: document.getElementById("calendar-head-wrap"),
+  headRow: document.getElementById("calendar-head-row"),
+  bodyScroll: document.getElementById("calendar-body-scroll"),
   grid: document.getElementById("calendar-grid"),
   prevWeek: document.getElementById("prev-week"),
   nextWeek: document.getElementById("next-week"),
@@ -104,6 +107,9 @@ function init() {
 }
 
 function bindEvents() {
+  el.bodyScroll.addEventListener("scroll", () => {
+    el.headRow.style.transform = `translateX(${-el.bodyScroll.scrollLeft}px)`;
+  });
   el.loginForm.addEventListener("submit", handleLogin);
   el.prevWeek.addEventListener("click", () => {
     state.weekStart = addDays(state.weekStart, -7);
@@ -180,11 +186,12 @@ function render() {
   const weekEnd = addDays(state.weekStart, 4);
   el.weekLabel.textContent = `${formatDateTR(state.weekStart)} - ${formatDateTR(weekEnd)}`;
   el.grid.innerHTML = "";
+  el.headRow.innerHTML = "";
 
   days.forEach((day, index) => {
     const date = addDays(state.weekStart, index);
     const head = makeCell(`${day}<div class=\"meta\">${formatDateTR(date)}</div>`, "cell head");
-    el.grid.append(head);
+    el.headRow.append(head);
   });
 
   lessonSlots.forEach(({ start, end, label, altTime }) => {
