@@ -1,6 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const ADMIN_PASSWORD = "yonetici2026!";
 const USERNAME_EMAIL_DOMAIN = "konferans.local";
 const SUPABASE_URL = "https://msggolytyegvgbffldfb.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_5s3qZ7q54HBMK2Mllis6RA_fbwDme_9";
@@ -83,10 +82,6 @@ const el = {
   confirmCancel: document.getElementById("confirm-cancel"),
   toast: document.getElementById("toast"),
   adminBtn: document.getElementById("admin-btn"),
-  adminLoginModal: document.getElementById("admin-login-modal"),
-  adminLoginForm: document.getElementById("admin-login-form"),
-  adminPassword: document.getElementById("admin-password"),
-  adminLoginCancel: document.getElementById("admin-login-cancel"),
   adminLogModal: document.getElementById("admin-log-modal"),
   adminLogSearch: document.getElementById("admin-log-search"),
   adminLogActionFilter: document.getElementById("admin-log-action-filter"),
@@ -137,9 +132,7 @@ function bindEvents() {
   el.form.addEventListener("submit", saveReservation);
   el.deleteBtn.addEventListener("click", deleteReservation);
   el.cancelBtn.addEventListener("click", () => el.modal.close());
-  el.adminBtn.addEventListener("click", openAdminLoginModal);
-  el.adminLoginForm.addEventListener("submit", handleAdminLogin);
-  el.adminLoginCancel.addEventListener("click", () => el.adminLoginModal.close());
+  el.adminBtn.addEventListener("click", openAdminPanel);
   el.adminLogClose.addEventListener("click", () => el.adminLogModal.close());
   el.adminLogSearch.addEventListener("input", renderAuditLog);
   el.adminLogActionFilter.addEventListener("change", renderAuditLog);
@@ -148,7 +141,8 @@ function bindEvents() {
 function userFromSupabase(authUser) {
   return {
     id: authUser.id,
-    name: authUser.user_metadata?.display_name || authUser.email
+    name: authUser.user_metadata?.display_name || authUser.email,
+    isAdmin: Boolean(authUser.user_metadata?.is_admin)
   };
 }
 
@@ -511,16 +505,9 @@ function askConfirm(message) {
   });
 }
 
-function openAdminLoginModal() {
-  el.adminLoginForm.reset();
-  el.adminLoginModal.showModal();
-  setTimeout(() => el.adminPassword.focus(), 0);
-}
-
-async function handleAdminLogin(event) {
-  event.preventDefault();
-  if (el.adminPassword.value !== ADMIN_PASSWORD) {
-    notify("Şifre hatalı.");
+async function openAdminPanel() {
+  if (!state.user.isAdmin) {
+    notify("Bu bölüme erişim yetkiniz yok.");
     return;
   }
 
@@ -534,7 +521,6 @@ async function handleAdminLogin(event) {
   }
 
   state.auditLog = data;
-  el.adminLoginModal.close();
   el.adminLogSearch.value = "";
   el.adminLogActionFilter.value = "all";
   renderAuditLog();
@@ -575,6 +561,7 @@ function renderAuditLog() {
 function showApp() {
   el.loginCard.classList.add("hidden");
   el.app.classList.remove("hidden");
+  el.adminBtn.classList.toggle("hidden", !state.user.isAdmin);
 }
 
 function showLogin() {
