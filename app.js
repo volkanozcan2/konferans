@@ -1,6 +1,10 @@
-const LOGIN_PASSWORD = "gixxer07!";
-const SESSION_KEY = "konferans_session";
-const RESERVATIONS_KEY = "konferans_reservations";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const USERNAME_EMAIL_DOMAIN = "konferans.local";
+const SUPABASE_URL = "https://msggolytyegvgbffldfb.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_5s3qZ7q54HBMK2Mllis6RA_fbwDme_9";
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const state = {
   weekStart: startOfWeek(new Date()),
@@ -8,18 +12,20 @@ const state = {
   reservations: [],
   reservationIndex: new Map(),
   selectedSlot: null,
-  viewOnly: false
+  viewOnly: false,
+  auditLog: []
 };
 
 const lessonSlots = [
-  ["09:00", "09:40"],
-  ["09:50", "10:30"],
-  ["10:40", "11:20"],
-  ["11:30", "12:10"],
-  ["12:50", "13:30"],
-  ["13:40", "14:20"],
-  ["14:30", "15:10"],
-  ["15:20", "16:00"]
+  { start: "09:00", end: "09:40", label: "1. Ders" },
+  { start: "09:50", end: "10:30", label: "2. Ders" },
+  { start: "10:40", end: "11:20", label: "3. Ders" },
+  { start: "11:30", end: "12:10", label: "4. Ders" },
+  { start: "12:20", end: "13:00", label: "Öğle Arası / 5. Ders" },
+  { start: "12:50", end: "13:30", label: "5. Ders / Öğle Arası" },
+  { start: "13:40", end: "14:20", label: "6. Ders", altTime: "13:50-14:30" },
+  { start: "14:30", end: "15:10", label: "7. Ders", altTime: "14:40-15:20" },
+  { start: "15:20", end: "16:00", label: "8. Ders", altTime: "15:25-16:00" }
 ];
 
 const days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"];
@@ -45,11 +51,13 @@ const el = {
   password: document.getElementById("password"),
   app: document.getElementById("app"),
   weekLabel: document.getElementById("week-label"),
+  headWrap: document.getElementById("calendar-head-wrap"),
+  headRow: document.getElementById("calendar-head-row"),
+  bodyScroll: document.getElementById("calendar-body-scroll"),
   grid: document.getElementById("calendar-grid"),
   prevWeek: document.getElementById("prev-week"),
   nextWeek: document.getElementById("next-week"),
   todayWeek: document.getElementById("today-week"),
-  exportCsvBtn: document.getElementById("export-csv-btn"),
   logoutBtn: document.getElementById("logout-btn"),
   modal: document.getElementById("reservation-modal"),
   form: document.getElementById("reservation-form"),
@@ -72,18 +80,31 @@ const el = {
   confirmMessage: document.getElementById("confirm-message"),
   confirmOk: document.getElementById("confirm-ok"),
   confirmCancel: document.getElementById("confirm-cancel"),
-  toast: document.getElementById("toast")
+  toast: document.getElementById("toast"),
+  adminBtn: document.getElementById("admin-btn"),
+  adminLogModal: document.getElementById("admin-log-modal"),
+  adminLogSearch: document.getElementById("admin-log-search"),
+  adminLogActionFilter: document.getElementById("admin-log-action-filter"),
+  adminLogTbody: document.getElementById("admin-log-tbody"),
+  adminLogEmpty: document.getElementById("admin-log-empty"),
+  adminLogClose: document.getElementById("admin-log-close")
 };
 
 bindEvents();
 init();
 
-function init() {
-  const session = loadSession();
-  if (session) {
-    state.user = session;
+async function init() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    notify("Oturum kontrol edilemedi.");
+    showLogin();
+    return;
+  }
+
+  if (data.session?.user) {
+    state.user = userFromSupabase(data.session.user);
     showApp();
-    loadReservations();
+    await loadReservations();
     return;
   }
 
@@ -91,69 +112,92 @@ function init() {
 }
 
 function bindEvents() {
+  el.bodyScroll.addEventListener("scroll", () => {
+    el.headRow.style.transform = `translateX(${-el.bodyScroll.scrollLeft}px)`;
+  });
   el.loginForm.addEventListener("submit", handleLogin);
-  el.prevWeek.addEventListener("click", () => {
+  el.prevWeek.addEventListener("click", async () => {
     state.weekStart = addDays(state.weekStart, -7);
-    loadReservations();
+    await loadReservations();
   });
-  el.nextWeek.addEventListener("click", () => {
+  el.nextWeek.addEventListener("click", async () => {
     state.weekStart = addDays(state.weekStart, 7);
-    loadReservations();
+    await loadReservations();
   });
-  el.todayWeek.addEventListener("click", () => {
+  el.todayWeek.addEventListener("click", async () => {
     state.weekStart = startOfWeek(new Date());
-    loadReservations();
+    await loadReservations();
   });
-  el.exportCsvBtn.addEventListener("click", exportWeekCsv);
   el.logoutBtn.addEventListener("click", handleLogout);
   el.form.addEventListener("submit", saveReservation);
   el.deleteBtn.addEventListener("click", deleteReservation);
   el.cancelBtn.addEventListener("click", () => el.modal.close());
+  el.adminBtn.addEventListener("click", openAdminPanel);
+  el.adminLogClose.addEventListener("click", () => el.adminLogModal.close());
+  el.adminLogSearch.addEventListener("input", renderAuditLog);
+  el.adminLogActionFilter.addEventListener("change", renderAuditLog);
 }
 
-function handleLogin(event) {
+function userFromSupabase(authUser) {
+  return {
+    id: authUser.id,
+    name: authUser.user_metadata?.display_name || authUser.email,
+    isAdmin: Boolean(authUser.user_metadata?.is_admin)
+  };
+}
+
+async function handleLogin(event) {
   event.preventDefault();
-  const name = sanitizeName(el.isim.value);
+  const username = sanitizeName(el.isim.value).toLowerCase().replace(/\s+/g, "");
   const password = el.password.value;
 
-  if (!name) {
-    notify("İsim alanı boş bırakılamaz.");
+  if (!username) {
+    notify("Kullanıcı adı boş bırakılamaz.");
     return;
   }
 
-  if (password !== LOGIN_PASSWORD) {
-    notify("Giriş başarısız: şifre hatalı.");
+  const email = `${username}@${USERNAME_EMAIL_DOMAIN}`;
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    notify("Giriş başarısız: kullanıcı adı veya şifre hatalı.");
     return;
   }
 
-  state.user = { name };
-  saveSession(state.user);
+  state.user = userFromSupabase(data.user);
   el.loginForm.reset();
   showApp();
-  loadReservations();
+  await loadReservations();
 }
 
-function handleLogout() {
-  clearSession();
+async function handleLogout() {
+  await supabase.auth.signOut();
   state.user = null;
   state.reservations = [];
   showLogin();
 }
 
-function loadReservations() {
+async function loadReservations() {
   const weekEnd = addDays(state.weekStart, 4);
   const weekStartIso = isoDate(state.weekStart);
   const weekEndIso = isoDate(weekEnd);
 
-  const all = loadAllReservations();
-  state.reservations = all
-    .filter((item) => item.reservation_date >= weekStartIso && item.reservation_date <= weekEndIso)
-    .sort((a, b) => {
-      if (a.reservation_date !== b.reservation_date) {
-        return a.reservation_date < b.reservation_date ? -1 : 1;
-      }
-      return a.start_time < b.start_time ? -1 : a.start_time > b.start_time ? 1 : 0;
-    });
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("*")
+    .gte("reservation_date", weekStartIso)
+    .lte("reservation_date", weekEndIso);
+
+  if (error) {
+    notify(`Rezervasyonlar yüklenemedi: ${error.message}`);
+    return;
+  }
+
+  state.reservations = data.sort((a, b) => {
+    if (a.reservation_date !== b.reservation_date) {
+      return a.reservation_date < b.reservation_date ? -1 : 1;
+    }
+    return a.start_time < b.start_time ? -1 : a.start_time > b.start_time ? 1 : 0;
+  });
   state.reservationIndex = buildReservationIndex(state.reservations);
   render();
 }
@@ -162,14 +206,16 @@ function render() {
   const weekEnd = addDays(state.weekStart, 4);
   el.weekLabel.textContent = `${formatDateTR(state.weekStart)} - ${formatDateTR(weekEnd)}`;
   el.grid.innerHTML = "";
+  el.headRow.innerHTML = "";
 
   days.forEach((day, index) => {
     const date = addDays(state.weekStart, index);
     const head = makeCell(`${day}<div class=\"meta\">${formatDateTR(date)}</div>`, "cell head");
-    el.grid.append(head);
+    el.headRow.append(head);
   });
 
-  lessonSlots.forEach(([start, end]) => {
+  lessonSlots.forEach(({ start, end, label, altTime }) => {
+    const ariaTimeLabel = altTime ? `${start}-${end} / ${altTime}` : `${start}-${end}`;
     for (let dayIndex = 0; dayIndex < 5; dayIndex += 1) {
       const date = isoDate(addDays(state.weekStart, dayIndex));
       const reservation = state.reservationIndex.get(reservationKey(date, start));
@@ -190,7 +236,7 @@ function render() {
         slot.dataset.id = reservation.id;
         slot.setAttribute(
           "aria-label",
-          `${date} ${start}-${end} dolu slot, etkinlik: ${reservation.event_content}`
+          `${date} ${label} (${ariaTimeLabel}) dolu slot, etkinlik: ${reservation.event_content}`
         );
         slot.innerHTML = `
           <div class="slot-time">
@@ -198,7 +244,7 @@ function render() {
               <circle cx="12" cy="12" r="9"></circle>
               <path d="M12 7v5l3 2"></path>
             </svg>
-            <span>${start} - ${end}</span>
+            <span>${label}</span>
           </div>
           <div class="title">${escapeHtml(reservation.event_content)}</div>
         `;
@@ -206,13 +252,13 @@ function render() {
         slot.setAttribute(
           "aria-label",
           isBlockedEmptySlot
-            ? `${date} ${start}-${end} kapalı slot, neden: ${blockedReason}`
-            : `${date} ${start}-${end} boş slot`
+            ? `${date} ${label} (${ariaTimeLabel}) kapalı slot, neden: ${blockedReason}`
+            : `${date} ${label} (${ariaTimeLabel}) boş slot`
         );
         slot.innerHTML = isBlockedEmptySlot
           ? `
           <div class="slot-time">
-            <span>${start} - ${end}</span>
+            <span>${label}</span>
           </div>
           <div class="blocked-label">${escapeHtml(blockedReason)}</div>
         `
@@ -222,7 +268,7 @@ function render() {
               <circle cx="12" cy="12" r="9"></circle>
               <path d="M12 7v5l3 2"></path>
             </svg>
-            <span>${start} - ${end}</span>
+            <span>${label}</span>
           </div>
         `;
       }
@@ -259,7 +305,8 @@ function openModal({ reservation, date, start, end }) {
     el.reservationStart.value = reservation.start_time.slice(0, 5);
     el.reservationEnd.value = reservation.end_time.slice(0, 5);
     el.eventContent.readOnly = true;
-    el.slotSummary.classList.add("hidden");
+    el.slotSummary.textContent = `Saat: ${el.reservationStart.value} - ${el.reservationEnd.value}`;
+    el.slotSummary.classList.remove("hidden");
     el.lessonCountField.classList.add("hidden");
     el.deleteBtn.classList.remove("hidden");
     el.cancelBtn.classList.add("hidden");
@@ -274,10 +321,12 @@ function openModal({ reservation, date, start, end }) {
     el.reservationStart.value = start;
     el.reservationEnd.value = end;
     el.eventContent.readOnly = false;
-    el.slotSummary.textContent = `Başlangıç saati: ${start}`;
+    const slotInfo = lessonSlots.find((slot) => slot.start === start);
+    const timeText = slotInfo?.altTime ? `${start} - ${end} / ${slotInfo.altTime}` : `${start} - ${end}`;
+    el.slotSummary.textContent = `Saat: ${timeText}`;
     el.slotSummary.classList.remove("hidden");
     el.lessonCountField.classList.remove("hidden");
-    const startIndex = lessonSlots.findIndex(([slotStart]) => slotStart === start);
+    const startIndex = lessonSlots.findIndex((slot) => slot.start === start);
     const maxCount = lessonSlots.length - startIndex;
     el.lessonCount.max = String(maxCount);
     el.lessonCount.value = "1";
@@ -292,14 +341,14 @@ function openModal({ reservation, date, start, end }) {
   }
 }
 
-function saveReservation(event) {
+async function saveReservation(event) {
   event.preventDefault();
   if (state.viewOnly) {
     el.modal.close();
     return;
   }
 
-  const teacherName = sanitizeName(el.teacherName.value) || profileName(state.user);
+  const teacherName = profileName(state.user);
   const eventContent = el.eventContent.value.trim();
   const reservationDate = el.reservationDate.value;
   const startTime = el.reservationStart.value;
@@ -315,7 +364,7 @@ function saveReservation(event) {
     return;
   }
 
-  const startIndex = lessonSlots.findIndex(([slotStart]) => slotStart === startTime);
+  const startIndex = lessonSlots.findIndex((slot) => slot.start === startTime);
   if (startIndex < 0) {
     notify("Başlangıç saati geçersiz.");
     return;
@@ -327,7 +376,7 @@ function saveReservation(event) {
     return;
   }
 
-  const hasPastSlot = selectedSlots.some(([slotStart]) => isPastSlot(reservationDate, slotStart));
+  const hasPastSlot = selectedSlots.some((slot) => isPastSlot(reservationDate, slot.start));
   if (hasPastSlot) {
     notify("Geçmiş saatler için rezervasyon eklenemez.");
     return;
@@ -339,31 +388,55 @@ function saveReservation(event) {
     return;
   }
 
-  const allReservations = loadAllReservations();
-  const hasCollision = selectedSlots.some(([slotStart]) =>
-    allReservations.some(
-      (item) => item.reservation_date === reservationDate && item.start_time.slice(0, 5) === slotStart
-    )
+  const { data: existing, error: fetchError } = await supabase
+    .from("reservations")
+    .select("start_time")
+    .eq("reservation_date", reservationDate);
+  if (fetchError) {
+    notify(`Kayıt kontrol edilemedi: ${fetchError.message}`);
+    return;
+  }
+
+  const hasCollision = selectedSlots.some((slot) =>
+    existing.some((item) => item.start_time.slice(0, 5) === slot.start)
   );
   if (hasCollision) {
     notify("Seçilen aralıkta dolu saat var. Ders sayısını azaltın veya başka saat seçin.");
     return;
   }
 
-  const newReservations = selectedSlots.map(([slotStart, slotEnd]) => ({
-    id: generateId(),
+  const newReservations = selectedSlots.map((slot) => ({
     teacher_name: teacherName,
     event_content: eventContent,
     reservation_date: reservationDate,
-    start_time: slotStart,
-    end_time: slotEnd,
-    user_id: teacherName
+    start_time: slot.start,
+    end_time: slot.end,
+    user_id: state.user.id
   }));
 
-  saveAllReservations([...allReservations, ...newReservations]);
+  const { error: insertError } = await supabase.from("reservations").insert(newReservations);
+  if (insertError) {
+    if (insertError.code === "23505") {
+      notify("Seçilen aralıkta çakışma var. Kayıt yapılmadı.");
+      return;
+    }
+    notify(`Kayıt başarısız: ${insertError.message}`);
+    return;
+  }
+
+  for (const item of newReservations) {
+    await appendAuditLog({
+      action: "added",
+      actor: state.user.name,
+      reservation_date: item.reservation_date,
+      start_time: item.start_time,
+      end_time: item.end_time,
+      event_content: item.event_content
+    });
+  }
 
   el.modal.close();
-  loadReservations();
+  await loadReservations();
   notify("Rezervasyon eklendi.");
 }
 
@@ -380,10 +453,26 @@ async function deleteReservation() {
     return;
   }
 
-  const allReservations = loadAllReservations();
-  saveAllReservations(allReservations.filter((item) => item.id !== id));
+  const deletedInfo = {
+    reservation_date: el.reservationDate.value,
+    start_time: el.reservationStart.value,
+    end_time: el.reservationEnd.value,
+    event_content: el.eventContent.value
+  };
 
-  loadReservations();
+  const { error } = await supabase.from("reservations").delete().eq("id", id);
+  if (error) {
+    notify(`Silme başarısız: ${error.message}`);
+    return;
+  }
+
+  await appendAuditLog({
+    action: "deleted",
+    actor: state.user.name,
+    ...deletedInfo
+  });
+
+  await loadReservations();
   notify("Rezervasyon silindi.");
 }
 
@@ -416,9 +505,63 @@ function askConfirm(message) {
   });
 }
 
+async function openAdminPanel() {
+  if (!state.user.isAdmin) {
+    notify("Bu bölüme erişim yetkiniz yok.");
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("audit_log")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) {
+    notify(`Denetim kaydı yüklenemedi: ${error.message}`);
+    return;
+  }
+
+  state.auditLog = data;
+  el.adminLogSearch.value = "";
+  el.adminLogActionFilter.value = "all";
+  renderAuditLog();
+  el.adminLogModal.showModal();
+}
+
+function renderAuditLog() {
+  const search = el.adminLogSearch.value.trim().toLowerCase();
+  const actionFilter = el.adminLogActionFilter.value;
+
+  const entries = state.auditLog
+    .filter((entry) => actionFilter === "all" || entry.action === actionFilter)
+    .filter((entry) => {
+      if (!search) return true;
+      return (
+        entry.actor.toLowerCase().includes(search) ||
+        entry.event_content.toLowerCase().includes(search)
+      );
+    });
+
+  el.adminLogTbody.innerHTML = "";
+  el.adminLogEmpty.classList.toggle("hidden", entries.length > 0);
+
+  entries.forEach((entry) => {
+    const row = document.createElement("tr");
+    const actionLabel = entry.action === "added" ? "Eklendi" : "Silindi";
+    row.innerHTML = `
+      <td>${escapeHtml(new Date(entry.created_at).toLocaleString("tr-TR"))}</td>
+      <td>${escapeHtml(entry.actor)}</td>
+      <td><span class="admin-log-badge admin-log-badge-${entry.action}">${actionLabel}</span></td>
+      <td>${escapeHtml(entry.reservation_date)} ${escapeHtml(entry.start_time)}-${escapeHtml(entry.end_time)}</td>
+      <td>${escapeHtml(entry.event_content)}</td>
+    `;
+    el.adminLogTbody.append(row);
+  });
+}
+
 function showApp() {
   el.loginCard.classList.add("hidden");
   el.app.classList.remove("hidden");
+  el.adminBtn.classList.toggle("hidden", !state.user.isAdmin);
 }
 
 function showLogin() {
@@ -492,13 +635,6 @@ function sanitizeName(value) {
     .slice(0, 60);
 }
 
-function generateId() {
-  if (window.crypto && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 function isPastSlot(dateIso, startTime) {
   const slotStart = new Date(`${dateIso}T${startTime}:00`);
   return slotStart.getTime() < Date.now();
@@ -511,48 +647,6 @@ function getBlockedReason(dateIso) {
   return (
     blockedDateRanges.find((range) => dateIso >= range.start && dateIso <= range.end)?.reason || null
   );
-}
-
-function exportWeekCsv() {
-  const rows = [["Tarih", "Gun", "Baslangic", "Bitis", "Durum", "Ogretmen", "Etkinlik", "Not"]];
-  for (let dayIndex = 0; dayIndex < 5; dayIndex += 1) {
-    const dateObj = addDays(state.weekStart, dayIndex);
-    const dateIso = isoDate(dateObj);
-    const dayName = days[dayIndex];
-    const blockedReason = getBlockedReason(dateIso);
-
-    lessonSlots.forEach(([start, end]) => {
-      const reservation = state.reservationIndex.get(reservationKey(dateIso, start));
-      const status = reservation ? "Dolu" : blockedReason ? "Kapali" : "Bos";
-      rows.push([
-        dateIso,
-        dayName,
-        start,
-        end,
-        status,
-        reservation?.teacher_name || "",
-        reservation?.event_content || "",
-        blockedReason || ""
-      ]);
-    });
-  }
-
-  const csvBody = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
-  const blob = new Blob(["\uFEFF" + csvBody], { type: "text/csv;charset=utf-8;" });
-  const fileName = `konferans-hafta-${isoDate(state.weekStart)}.csv`;
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function csvEscape(value) {
-  const text = String(value ?? "");
-  return `"${text.replaceAll('"', '""')}"`;
 }
 
 function buildReservationIndex(reservations) {
@@ -568,36 +662,9 @@ function reservationKey(dateIso, startTime) {
   return `${dateIso}|${startTime}`;
 }
 
-function loadAllReservations() {
-  try {
-    const raw = localStorage.getItem(RESERVATIONS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+async function appendAuditLog(entry) {
+  const { error } = await supabase.from("audit_log").insert(entry);
+  if (error) {
+    notify(`Denetim kaydı yazılamadı: ${error.message}`);
   }
-}
-
-function saveAllReservations(list) {
-  localStorage.setItem(RESERVATIONS_KEY, JSON.stringify(list));
-}
-
-function loadSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.name !== "string" || !parsed.name) return null;
-    return { name: parsed.name };
-  } catch {
-    return null;
-  }
-}
-
-function saveSession(user) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ name: user.name, loggedInAt: Date.now() }));
-}
-
-function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
 }

@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Konferans salonu rezervasyonları için haftalık program, hızlı giriş, çakışma kontrolü ve CSV indirme."
+      content="Konferans salonu rezervasyonları için haftalık program, hızlı giriş ve çakışma kontrolü."
     />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+      content="default-src 'self'; script-src 'self' https://esm.sh; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https://msggolytyegvgbffldfb.supabase.co; img-src 'self' data: blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
     />
     <title>Konferans Salonu Rezervasyon</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
@@ -19,7 +19,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20260223-3" />
+    <link rel="stylesheet" href="styles.css?v=20260822-4" />
   </head>
   <body>
     <div class="bg-orb orb-1" aria-hidden="true"></div>
@@ -30,8 +30,8 @@
         <h1>Konferans Salonu Rezervasyon</h1>
         <form id="login-form" autocomplete="on">
           <label>
-            İsim
-            <input id="isim" name="isim" type="text" required minlength="2" maxlength="60" autocomplete="name" />
+            Kullanıcı Adı
+            <input id="isim" name="isim" type="text" required minlength="2" maxlength="60" autocomplete="username" />
           </label>
           <label>
             Şifre
@@ -51,13 +51,18 @@
             <button id="prev-week" class="btn btn-ghost" type="button">Önceki</button>
             <button id="today-week" class="btn btn-ghost" type="button">Bu Hafta</button>
             <button id="next-week" class="btn btn-ghost" type="button">Sonraki</button>
-            <button id="export-csv-btn" class="btn btn-ghost" type="button">CSV İndir</button>
+            <button id="admin-btn" class="btn btn-ghost" type="button">Yönetici Paneli</button>
             <button id="logout-btn" class="btn btn-ghost" type="button">Çıkış</button>
           </div>
         </header>
 
         <section class="calendar card">
-          <div id="calendar-grid" class="calendar-grid"></div>
+          <div class="calendar-head-wrap" id="calendar-head-wrap">
+            <div id="calendar-head-row" class="calendar-grid calendar-head-row"></div>
+          </div>
+          <div class="calendar-body-scroll" id="calendar-body-scroll">
+            <div id="calendar-grid" class="calendar-grid"></div>
+          </div>
         </section>
       </section>
     </main>
@@ -84,7 +89,7 @@
 
         <label id="lesson-count-field">
           Ders sayısı
-          <input id="lesson-count" type="number" min="1" max="8" step="1" value="1" required />
+          <input id="lesson-count" type="number" min="1" max="9" step="1" value="1" required />
         </label>
 
         <div class="modal-actions">
@@ -106,8 +111,40 @@
       </form>
     </dialog>
 
+    <dialog id="admin-log-modal" class="modal admin-log-modal">
+      <div class="modal-card admin-log-card">
+        <h3>Denetim Kaydı</h3>
+        <div class="admin-log-filters">
+          <input id="admin-log-search" type="text" placeholder="İsim veya etkinlik ara" />
+          <select id="admin-log-action-filter">
+            <option value="all">Tümü</option>
+            <option value="added">Eklendi</option>
+            <option value="deleted">Silindi</option>
+          </select>
+        </div>
+        <div class="admin-log-table-wrap">
+          <table class="admin-log-table">
+            <thead>
+              <tr>
+                <th>Ne zaman</th>
+                <th>Kim</th>
+                <th>İşlem</th>
+                <th>Tarih / Saat</th>
+                <th>Etkinlik</th>
+              </tr>
+            </thead>
+            <tbody id="admin-log-tbody"></tbody>
+          </table>
+          <p id="admin-log-empty" class="admin-log-empty hidden">Henüz kayıt yok.</p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="admin-log-close">Kapat</button>
+        </div>
+      </div>
+    </dialog>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-    <script type="module" src="app.js?v=20260225-3"></script>
+    <script type="module" src="app.js?v=20260822-7"></script>
   </body>
 </html>
