@@ -51,7 +51,6 @@ const el = {
   prevWeek: document.getElementById("prev-week"),
   nextWeek: document.getElementById("next-week"),
   todayWeek: document.getElementById("today-week"),
-  exportCsvBtn: document.getElementById("export-csv-btn"),
   logoutBtn: document.getElementById("logout-btn"),
   modal: document.getElementById("reservation-modal"),
   form: document.getElementById("reservation-form"),
@@ -117,7 +116,6 @@ function bindEvents() {
     state.weekStart = startOfWeek(new Date());
     loadReservations();
   });
-  el.exportCsvBtn.addEventListener("click", exportWeekCsv);
   el.logoutBtn.addEventListener("click", handleLogout);
   el.form.addEventListener("submit", saveReservation);
   el.deleteBtn.addEventListener("click", deleteReservation);
@@ -602,48 +600,6 @@ function getBlockedReason(dateIso) {
   return (
     blockedDateRanges.find((range) => dateIso >= range.start && dateIso <= range.end)?.reason || null
   );
-}
-
-function exportWeekCsv() {
-  const rows = [["Tarih", "Gun", "Baslangic", "Bitis", "Durum", "Ogretmen", "Etkinlik", "Not"]];
-  for (let dayIndex = 0; dayIndex < 5; dayIndex += 1) {
-    const dateObj = addDays(state.weekStart, dayIndex);
-    const dateIso = isoDate(dateObj);
-    const dayName = days[dayIndex];
-    const blockedReason = getBlockedReason(dateIso);
-
-    lessonSlots.forEach(([start, end]) => {
-      const reservation = state.reservationIndex.get(reservationKey(dateIso, start));
-      const status = reservation ? "Dolu" : blockedReason ? "Kapali" : "Bos";
-      rows.push([
-        dateIso,
-        dayName,
-        start,
-        end,
-        status,
-        reservation?.teacher_name || "",
-        reservation?.event_content || "",
-        blockedReason || ""
-      ]);
-    });
-  }
-
-  const csvBody = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
-  const blob = new Blob(["\uFEFF" + csvBody], { type: "text/csv;charset=utf-8;" });
-  const fileName = `konferans-hafta-${isoDate(state.weekStart)}.csv`;
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function csvEscape(value) {
-  const text = String(value ?? "");
-  return `"${text.replaceAll('"', '""')}"`;
 }
 
 function buildReservationIndex(reservations) {
