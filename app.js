@@ -363,6 +363,16 @@ function saveReservation(event) {
   }));
 
   saveAllReservations([...allReservations, ...newReservations]);
+  newReservations.forEach((item) => {
+    appendAuditLog({
+      action: "added",
+      actor: state.user.name,
+      reservation_date: item.reservation_date,
+      start_time: item.start_time,
+      end_time: item.end_time,
+      event_content: item.event_content
+    });
+  });
 
   el.modal.close();
   loadReservations();
@@ -383,7 +393,18 @@ async function deleteReservation() {
   }
 
   const allReservations = loadAllReservations();
+  const deletedItem = allReservations.find((item) => item.id === id);
   saveAllReservations(allReservations.filter((item) => item.id !== id));
+  if (deletedItem) {
+    appendAuditLog({
+      action: "deleted",
+      actor: state.user.name,
+      reservation_date: deletedItem.reservation_date,
+      start_time: deletedItem.start_time,
+      end_time: deletedItem.end_time,
+      event_content: deletedItem.event_content
+    });
+  }
 
   loadReservations();
   notify("Rezervasyon silindi.");
