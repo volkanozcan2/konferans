@@ -1,5 +1,8 @@
 import { createClient } from "./vendor/supabase.js?v=1";
 
+const APP_VERSION = "20260823-1";
+console.log(`Konferans Salonu Rezervasyon — sürüm: ${APP_VERSION}`);
+
 const USERNAME_EMAIL_DOMAIN = "konferans.local";
 const SUPABASE_URL = "https://msggolytyegvgbffldfb.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_5s3qZ7q54HBMK2Mllis6RA_fbwDme_9";
