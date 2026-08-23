@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "./vendor/supabase.js?v=1";
 
 const USERNAME_EMAIL_DOMAIN = "konferans.local";
 const SUPABASE_URL = "https://msggolytyegvgbffldfb.supabase.co";
@@ -134,8 +134,16 @@ function bindEvents() {
   el.cancelBtn.addEventListener("click", () => el.modal.close());
   el.adminBtn.addEventListener("click", openAdminPanel);
   el.adminLogClose.addEventListener("click", () => el.adminLogModal.close());
-  el.adminLogSearch.addEventListener("input", renderAuditLog);
+  el.adminLogSearch.addEventListener("input", debounce(renderAuditLog, 150));
   el.adminLogActionFilter.addEventListener("change", renderAuditLog);
+}
+
+function debounce(fn, delayMs) {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delayMs);
+  };
 }
 
 function userFromSupabase(authUser) {
